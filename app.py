@@ -1,48 +1,93 @@
 import streamlit as st
 from datetime import datetime, time
-import pandas as pd
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# Configuración de la página
-st.set_page_config(page_title="Reserva de Laboratorio", page_icon="🧪")
+# --- CONFIGURACIÓN DE LOS RESPONSABLES ---
+# Sustituye con los correos reales
+CORREOS_RESPONSABLES = [
+    "responsable1@gmail.com",
+    "responsable2@gmail.com",
+    "responsable3@gmail.com",
+    "responsable4@gmail.com"
+]
 
-# Estética personalizada con CSS
-st.markdown("""
-    <style>
-    .main { background-color: #f5f7f9; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
-    </style>
-    """, unsafe_allow_html=True)
+# --- CONFIGURACIÓN DEL EMISOR (Tu cuenta de despacho) ---
+# Se recomienda usar una cuenta de Gmail secundaria
+EMAIL_EMISOR = "tu_correo_de_envio@gmail.com"
+EMAIL_PASSWORD = "tu_password_de_aplicacion" # No es tu contraseña normal, ver paso 2 abajo.
 
-st.title("🧪 Sistema de Reserva de Laboratorio")
-st.write("Completa los datos para agendar tu espacio.")
+def enviar_correo(datos):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_EMISOR
+        msg['To'] = ", ".join(CORREOS_RESPONSABLES)
+        msg['Subject'] = f"🚨 NUEVA RESERVA: {datos['espacio']}"
 
-with st.form("reserva_form"):
+        cuerpo = f"""
+        Se ha recibido una nueva solicitud de reserva de laboratorio:
+        
+        - Solicitante: {datos['nombre']}
+        - Correo: {datos['email']}
+        - Espacio: {datos['espacio']}
+        - Fecha: {datos['fecha']}
+        - Horario: de {datos['h_inicio']} a {datos['h_fin']}
+        - Proyecto: {datos['proyecto']}
+        
+        Por favor, ingresa a Notion para aprobar o rechazar esta solicitud.
+        """
+        msg.attach(MIMEText(cuerpo, 'plain'))
+
+        # Servidor SMTP de Gmail
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(EMAIL_EMISOR, EMAIL_PASSWORD)
+        server.sendmail(EMAIL_EMISOR, CORREOS_RESPONSABLES, msg.as_string())
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Error al enviar correo: {e}")
+        return False
+
+# --- INTERFAZ DE STREAMLIT ---
+st.set_page_config(page_title="Reserva de Lab", page_icon="🧪")
+
+st.title("🧪 Reserva de Espacios")
+
+laboratorios = ["Selecciona...", "Lab. Pavimentos", "Lab. Topografía", "Lab. Suelos"]
+
+with st.form("form_reserva"):
     nombre = st.text_input("Nombre completo")
-    email = st.text_input("Tu correo electrónico")
+    email = st.text_input("Tu correo")
+    espacio = st.selectbox("Espacio", laboratorios)
     
     col1, col2 = st.columns(2)
-    with col1:
-        laboratorio = st.selectbox("Selecciona el Laboratorio", 
-                                  ["Lab. Pavimentos", "Lab. Topografía", "Lab. Suelos"])
-        fecha = st.date_input("Fecha de reserva", min_value=datetime.now())
+    fecha = col1.date_input("Fecha", min_value=datetime.now())
+    h_inicio = col2.time_input("Desde", time(8, 0))
+    h_fin = col2.time_input("Hasta", time(10, 0))
     
-    with col2:
-        hora_inicio = st.time_input("Hora de inicio", time(9, 0))
-        hora_fin = st.time_input("Hora de finalización", time(11, 0))
-
-    proyecto = st.text_area("Descripción corta del proyecto/práctica")
+    proyecto = st.text_area("Descripción del proyecto")
     
-    submit = st.form_submit_button("Enviar Solicitud de Reserva")
+    btn_enviar = st.form_submit_button("Confirmar Reserva")
 
-if submit:
-    if not nombre or not email:
-        st.error("Por favor, llena todos los campos obligatorios.")
-    elif hora_inicio >= hora_fin:
-        st.error("La hora de inicio debe ser menor a la de fin.")
+if btn_enviar:
+    if espacio == "Selecciona..." or not nombre or not email:
+        st.warning("Por favor completa los campos obligatorios.")
     else:
-        # AQUÍ CONECTARÍAS CON TU DB O ENVIARÍAS EL MAIL
-        st.success(f"¡Gracias {nombre}! Solicitud enviada a los responsables.")
-        st.balloons()
+        datos_reserva = {
+            "nombre": nombre,
+            "email": email,
+            "espacio": espacio,
+            "fecha": fecha,
+            "h_inicio": h_inicio,
+            "h_fin": h_fin,
+            "proyecto": proyecto
+        }
         
-        # Simulación de aviso a responsables
-        # Para enviar correos reales desde Python usa la librería 'smtplib'
+        with st.spinner("Enviando aviso a responsables..."):
+            exito = enviar_correo(datos_reserva)
+            
+        if exito:
+            st.success("¡Reserva enviada! Los responsables han sido notificados por correo.")
+            st.balloons()
